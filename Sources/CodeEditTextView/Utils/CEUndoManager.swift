@@ -36,8 +36,10 @@ public class CEUndoManager: UndoManager {
     override public var undoCount: Int { undoStack.count }
     override public var redoCount: Int { redoStack.count }
 
-    override public var canUndo: Bool { !undoStack.isEmpty }
-    override public var canRedo: Bool { !redoStack.isEmpty }
+    override public var canUndo: Bool { forwardedUndoManager?.canUndo ?? !undoStack.isEmpty }
+    override public var canRedo: Bool { forwardedUndoManager?.canRedo ?? !redoStack.isEmpty }
+    override public var undoActionName: String { forwardedUndoManager?.undoActionName ?? super.undoActionName }
+    override public var redoActionName: String { forwardedUndoManager?.redoActionName ?? super.redoActionName }
 
     /// A stack of operations that can be undone.
     private var undoStack: [UndoGroup] = []
@@ -45,6 +47,7 @@ public class CEUndoManager: UndoManager {
     private var redoStack: [UndoGroup] = []
 
     private weak var textView: TextView?
+    private weak var forwardedUndoManager: UndoManager?
     private(set) public var isGrouping: Bool = false
 
     /// After ``endUndoGrouping`` is called, we'd expect the next mutation to be exclusive no matter what. This
@@ -58,6 +61,12 @@ public class CEUndoManager: UndoManager {
 
     override public init() { }
 
+    /// Switches this manager to document-backed undo and clears any local edit history.
+    public func forward(to undoManager: UndoManager) {
+        clearStack()
+        forwardedUndoManager = undoManager
+    }
+
     convenience init(textView: TextView) {
         self.init()
         self.textView = textView
@@ -67,6 +76,10 @@ public class CEUndoManager: UndoManager {
 
     /// Performs an undo operation if there is one available.
     override public func undo() {
+        if let forwardedUndoManager {
+            forwardedUndoManager.undo()
+            return
+        }
         guard !isDisabled, let textView else {
             return
         }
@@ -98,6 +111,10 @@ public class CEUndoManager: UndoManager {
 
     /// Performs a redo operation if there is one available.
     override public func redo() {
+        if let forwardedUndoManager {
+            forwardedUndoManager.redo()
+            return
+        }
         guard !isDisabled, let textView else {
             return
         }
@@ -166,6 +183,7 @@ public class CEUndoManager: UndoManager {
     /// Calling this method while the manager is in an undo/redo operation will result in a no-op.
     /// - Parameter mutation: The mutation to register for undo/redo
     public func registerMutation(_ mutation: TextMutation) {
+        guard forwardedUndoManager == nil else { return }
         removeAllActions()
         guard let textView,
               let textStorage = textView.textStorage,
